@@ -1,0 +1,49 @@
+import os
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+
+# Зчитуємо токен із змінних оточення Render
+TOKEN = os.getenv("BOT_TOKEN")
+
+ADDRESS_INFO = (
+    "📍 **Адреса:** с. Петриків, вул. Шептицького 101а\n"
+    "⚡ **Група відключення:** 2.1 / 2.2"
+)
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome_text = (
+        f"Привіт! Я бот для відстеження графіків відключення світла.\n\n"
+        f"{ADDRESS_INFO}\n\n"
+        "Використовуйте команди:\n"
+        "/status — перевірити поточний стан\n"
+        "/today — графік на сьогодні"
+    )
+    await update.message.reply_text(welcome_text, parse_mode="Markdown")
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        f"Бот працює!\n\n{ADDRESS_INFO}\n\nДані про відключення оновлюються.",
+        parse_mode="Markdown"
+    )
+
+async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        f"Графік для групи 2.1 / 2.2 на сьогодні готується до інтеграції.",
+        parse_mode="Markdown"
+    )
+
+def main():
+    if not TOKEN:
+        raise ValueError("Помилка: BOT_TOKEN не знайдено в змінних оточення!")
+    
+    app = ApplicationBuilder().token(TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("today", today_command))
+    
+    print("Бот успішно запущений...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
