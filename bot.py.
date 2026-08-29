@@ -6,7 +6,8 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-TIMEOUT_SECONDS = 300  # Чому дорівнює таймаут (5 хвилин без пингу)
+TIMEOUT_SECONDS = 90  # Бот чекатиме 90 секунд (1.5 хвилини)
+
 
 last_ping_time = datetime.now()
 is_light_on = True
