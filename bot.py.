@@ -1,49 +1,75 @@
 import os
+import asyncio
+from datetime import datetime
+from aiohttp import web
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# Зчитуємо токен із змінних оточення Render
-TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+TIMEOUT_SECONDS = 300  
 
-ADDRESS_INFO = (
-    "📍 **Адреса:** с. Петриків, вул. Шептицького 101а\n"
-    "⚡ **Група відключення:** 2.1 / 2.2"
-)
+last_ping_time = datetime.now()
+is_light_on = True
+chat_ids = set()
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = (
-        f"Привіт! Я бот для відстеження графіків відключення світла.\n\n"
-        f"{ADDRESS_INFO}\n\n"
-        "Використовуйте команди:\n"
-        "/status — перевірити поточний стан\n"
-        "/today — графік на сьогодні"
-    )
-    await update.message.reply_text(welcome_text, parse_mode="Markdown")
-
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_ids.add(update.effective_chat.id)
+    status_text = "🟢 Світло є" if is_light_on else "🔴 Світла немає"
     await update.message.reply_text(
-        f"Бот працює!\n\n{ADDRESS_INFO}\n\nДані про відключення оновлюються.",
-        parse_mode="Markdown"
+        f"Привіт! Я відстежую стан світла у вашій квартирі.\nПоточний статус: {status_text}"
     )
 
-async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"Графік для групи 2.1 / 2.2 на сьогодні готується до інтеграції.",
-        parse_mode="Markdown"
-    )
+async def handle_ping(request):
+    global last_ping_time, is_light_on
+    last_ping_time = datetime.now()
+    
+    if not is_light_on:
+        is_light_on = True
+        app = request.app['telegram_app']
+        for c_id in chat_ids:
+            try:
+                await app.bot.send_message(chat_id=c_id, text="💡 **Світло з'явилося!**")
+            except Exception as e:
+                print(f"Помилка надсилання: {e}")
+                
+    return web.Response(text="OK")
 
-def main():
-    if not TOKEN:
-        raise ValueError("Помилка: BOT_TOKEN не знайдено в змінних оточення!")
-    
-    app = ApplicationBuilder().token(TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("status", status_command))
-    app.add_handler(CommandHandler("today", today_command))
-    
-    print("Бот успішно запущений...")
-    app.run_polling()
+async def check_light_status(app):
+    global is_light_on
+    while True:
+        await asyncio.sleep(30)
+        if is_light_on:
+            time_since_ping = (datetime.now() - last_ping_time).total_seconds()
+            if time_since_ping > TIMEOUT_SECONDS:
+                is_light_on = False
+                for c_id in chat_ids:
+                    try:
+                        await app.bot.send_message(chat_id=c_id, text="🔻 **Світло вимкнули!** (Сигнал від iPad зник)")
+                    except Exception as e:
+                        print(f"Помилка надсилання: {e}")
 
-if __name__ == "__main__":
-    main()
+async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+
+    web_app = web.Application()
+    web_app['telegram_app'] = app
+    web_app.router.add_get('/ping', handle_ping)
+    web_app.router.add_get('/', lambda r: web.Response(text="Bot is running!"))
+
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+
+    asyncio.create_task(check_light_status(app))
+
+    await asyncio.Event().wait()
+
+if __name__ == '__main__':
+    asyncio.run(main())
